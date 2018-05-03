@@ -238,13 +238,21 @@ class CVP(Device):
 
 
 class Link(object):
-    def __init__(self, link_type, name):
-        LOG.debug('\tConstructing a {} link with name {}'.format(link_type, name))
+    def __init__(self, link_type, name, interface=None):
+        if interface:
+            LOG.debug('\tConstructing a {} link with name {} using host interface {}'.format(link_type, name, interface))
+        else:
+            LOG.debug('\tConstructing a {} link with name {}'.format(link_type, name))
         self.name = name
         self.link_type = link_type
         self.ipam = None
+        self.interface = interface
         self.network = None
         self.subnet = None
+        if 'macvlan' in link_type:
+            self.driver = link_type.lower()
+        else:
+            self.driver = 'bridge'
 
     def get_or_create(self):
         LOG.debug('\tObtaining a pointer to network {}'.format(self.name))
@@ -253,12 +261,13 @@ class Link(object):
             self.network = self._create()
         return
 
-    def _create(self):
+    def _create(self,):
         return DOCKER.networks.create(
                 self.name,
-                driver='bridge',
+                driver=self.driver,
                 ipam=self.ipam,
-                labels={PREFIX: self.name}
+                labels={PREFIX: self.name},
+                options={'parent': self.interface}
             )
 
     def set_subnet(self, subnet):
@@ -326,12 +335,21 @@ def main():
     PUBLISH_BASE = int(t_yml.get('PUBLISH_BASE', os.getenv('PUBLISH_BASE', PUBLISH_BASE)))
 
     # Parsing links in the format ["Device-A:Interface-1", "Device-B:Interface-3"]
-    # Or ["Device-A:Interface-1", "cvp-1", "host-1", "host-2:Eth1", "host-3:Eth2:192.168.10.30/24"]
+    # Or ["Device-A:Interface-1", "cvp-1", "host-1", "host-2:Eth1", "host-3:Eth2:192.168.10.30/24", "Macvlan:Eth3"]
     for idx, link_dsc in enumerate(t_yml['links']):
-        if len(link_dsc) == 2:
-            link = Link('p2p', 'net-{}'.format(idx))
+        # Check if there are any Macvlan definitions in the string; they should be treated as Links instead of Devices
+        if 'macvlan' in str(link_dsc).lower():
+            for endpoint in link_dsc:
+                ep = endpoint.split(':')
+                if 'macvlan' in ep.pop(0).lower():
+                    interface = ep.pop(0).lower()
+                    link = Link('macvlan', 'net-{}'.format(idx), interface)
+        # Create the rest of the bridge networks
         else:
-            link = Link('mpoint', 'net-{}'.format(idx))
+            if len(link_dsc) == 2:
+                link = Link('p2p', 'net-{}'.format(idx))
+            else:
+                link = Link('mpoint', 'net-{}'.format(idx))
         links.append(link)
         for endpoint in link_dsc:
             ep = endpoint.split(':')
@@ -351,20 +369,21 @@ def main():
                 else:
                     ip = None
                 device = devices.get(device_name, Host(device_name, ip))
-            else:
+            elif 'macvlan' not in device_name.lower():
                 device = devices.get(device_name, CEOS(device_name))
             # Interface name can be optional
             if ep:
-                int_name = ep.pop()
+                int_name = ep.pop().lower()
             else:
                 # Note that this would result in an unpredictable connections
                 # when multiple ports are connected to the same link
                 # To avoid that explicitly specify interface name
                 # As in "device:interface"
                 int_name = 'eth{}'.format(idx)
-            # Remember device connections
-            device.connect(int_name, link)
-            devices[device_name] = device
+            if 'macvlan' not in device_name.lower():
+                # Remember device connections
+                device.connect(int_name, link)
+                devices[device_name] = device
 
     # Publishing ports.
     if PUBLISH_BASE:
