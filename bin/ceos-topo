@@ -354,7 +354,7 @@ class Link(object):
             self.network = self._create()
         return
 
-    def _create(self):
+    def _create(self,):
         return DOCKER.networks.create(
                 self.name,
                 driver=self.driver,
@@ -425,7 +425,7 @@ def main():
 
     # Publishing ports.
     if PUBLISH_BASE:
-        print(devices[0])
+        print(devices)
         # Sort all device names alphabetically
         for idx,name in enumerate(sorted(devices.keys())):
             # Publish internal HTTPS port to external base

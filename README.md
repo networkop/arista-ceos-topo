@@ -35,6 +35,13 @@ links:
  - ["Device-1:Interface1", "Device-2:Interface1"]
 ```
 
+Links can also be connected to host interfaces using the Macvlan kernel driver.
+This works by appending a section to the links between the devices.
+```yaml
+links:
+ - ["Device-1:Interface1", "Device-2:Interface1", "Macvlan:Eth1"]
+```
+
 There should be three topology examples in the `./arista-ceos-files/examples` directory
 
 # (Optional) Override default variables
