@@ -1,0 +1,6 @@
+links:
+        - endpoints:["Device-A:Interface-2", "Device-B:Interface-1"]; driver:"Bridge"
+        - endpoints:["Device-A:Interface-1", "Device-B:Interface-2"]; driver:"Macvlan:Ens19"
+
+CEOS_IMAGE: ceosimage:latest
+VERSION: 2

@@ -1,6 +1,6 @@
 links:
-  - ["Device-A:Interface-1", "Device-B:Interface-2"]
-  - ["Device-A:Interface-2", "Device-B:Interface-1"]
-  - ["Device-A:Interface-3", "Device-B:Interface-3", "cvp-1"]
+        - ["Device-A:Interface-1", "Device-B:Interface-2"]
+        - ["Device-A:Interface-2", "Device-B:Interface-1"]
+    #  - ["Device-A:Interface-3", "Device-B:Interface-3", "cvp-1"]
 
-CEOS_IMAGE: veos:latest
+CEOS_IMAGE: ceosimage:latest
