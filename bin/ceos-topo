@@ -6,6 +6,7 @@ import os
 import docker
 import os.path
 import netaddr
+import ast
 
 LOG = logging.getLogger(__name__)
 DOCKER = docker.from_env()
@@ -14,7 +15,8 @@ PREFIX = 'CEOS-LAB'
 CEOS_IMAGE = 'ceos:latest'
 PUBLISH_BASE = 8000
 OOB_PREFIX = '192.168.100.0/24'
-
+DRIVER = 'bridge'
+VERSION = 1
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Tool to create cEOS topologies")
@@ -59,6 +61,104 @@ def kill_agetty():
     cmd = 'pkill agetty'
     subprocess.call(cmd, shell=True)
     return
+
+def parse_v1(t_yml):
+    devices = dict()
+    links = list()
+    # Parsing links in the format ["Device-A:Interface-1", "Device-B:Interface-3"]
+    # Or ["Device-A:Interface-1", "cvp-1", "host-1", "host-2:Eth1", "host-3:Eth2:192.168.10.30/24"]
+    for idx, link_dsc in enumerate(t_yml['links']):
+        if len(link_dsc) == 2:
+            link = Link('p2p', 'net-{}'.format(idx))
+        else:
+            link = Link('mpoint', 'net-{}'.format(idx))
+        links.append(link)
+        for endpoint in link_dsc:
+            ep = endpoint.split(':')
+            if not ep:
+                LOG.info('Link contains empty definition')
+                return 1
+            device_name = ep.pop(0)
+            if 'cvp' in device_name.lower():
+                device = devices.get(device_name, CVP(device_name))
+                # Why are we hard-coding a subnet here? I forgot...
+                # link.set_subnet('192.168.100.0/24')
+            elif 'host' in device_name.lower():
+                # Support for optional IP address parameter
+                if len(ep) > 1:
+                    # This means we have intf name AND IP address
+                    ip = ep.pop()
+                else:
+                    ip = None
+                device = devices.get(device_name, Host(device_name, ip))
+            else:
+                device = devices.get(device_name, CEOS(device_name))
+            # Interface name can be optional
+            if ep:
+                int_name = ep.pop()
+            else:
+                # Note that this would result in an unpredictable connections
+                # when multiple ports are connected to the same link
+                # To avoid that explicitly specify interface name
+                # As in "device:interface"
+                int_name = 'eth{}'.format(idx)
+            # Rememleber device connections
+            device.connect(int_name, link)
+            devices[device_name] = device
+        return devices, links
+
+
+def parse_v2(t_yml):
+    devices = dict()
+    links = list()
+    for idx, link_dsc in enumerate(t_yml['links']):
+        endpoints = ast.literal_eval(link_dsc.split(';')[0].split(':',1)[1])
+        driver = link_dsc.split(';')[1]
+        if 'macvlan' in driver.lower():
+            macvlan = driver.split(':')
+            int_name = macvlan[2][:-1].lower()
+            driver = "macvlan" 
+        elif 'bridge' in driver.lower():
+            int_name = None
+            if len(endpoints) == 2:
+                driver = 'p2p'
+            else:
+                driver = 'mpoint'
+        link = Link(driver, 'net-{}'.format(idx), int_name)
+        links.append(link)
+        for endpoint in endpoints:
+            ep = endpoint.split(':')
+            if not ep:
+                LOG.info('Link contains empty definition')
+                return 1
+            device_name = ep.pop(0)
+            if 'cvp' in device_name.lower():
+                device = devices.get(device_name, CVP(device_name))
+                # Why are we hard-coding a subnet here? I forgot...
+                # link.set_subnet('192.168.100.0/24')
+            elif 'host' in device_name.lower():
+                # Support for optional IP address parameter
+                if len(ep) > 1:
+                    # This means we have intf name AND IP address
+                    ip = ep.pop()
+                else:
+                    ip = None
+                device = devices.get(device_name, Host(device_name, ip))
+            else:
+                device = devices.get(device_name, CEOS(device_name))
+            # Interface name can be optional
+            if ep:
+                int_name = ep.pop()
+            else:
+                # Note that this would result in an unpredictable connections
+                # when multiple ports are connected to the same link
+                # To avoid that explicitly specify interface name
+                # As in "device:interface"
+                int_name = 'eth{}'.format(idx)
+            # Remember device connections
+            device.connect(int_name, link)
+            devices[device_name] = device
+    return devices, links
 
 
 class Device(object):
@@ -231,13 +331,21 @@ class CVP(Device):
 
 
 class Link(object):
-    def __init__(self, link_type, name):
-        LOG.debug('\tConstructing a {} link with name {}'.format(link_type, name))
+    def __init__(self, link_type, name, int_name=None):
+        if int_name:
+            LOG.debug('\tConstructing a {} link with name {} using host interface {}'.format(link_type, name, int_name))
+        else:
+            LOG.debug('\tConstructing a {} link with name {}'.format(link_type, name))
         self.name = name
         self.link_type = link_type
         self.ipam = None
+        self.interface = int_name
         self.network = None
         self.subnet = None
+        if "macvlan" in link_type:
+            self.driver = "macvlan"
+        else:
+            self.driver = "bridge"
 
     def get_or_create(self):
         LOG.debug('\tObtaining a pointer to network {}'.format(self.name))
@@ -246,12 +354,13 @@ class Link(object):
             self.network = self._create()
         return
 
-    def _create(self):
+    def _create(self,):
         return DOCKER.networks.create(
                 self.name,
-                driver='bridge',
+                driver=self.driver,
                 ipam=self.ipam,
-                labels={PREFIX: self.name}
+                labels={PREFIX: self.name},
+                options={'parent': self.interface}
             )
 
     def _get(self):
@@ -270,9 +379,7 @@ class Link(object):
 
 def main():
     # Initializing main variables
-    global PREFIX, CEOS_IMAGE, CONF_DIR, PUBLISH_BASE, OOB_PREFIX
-    devices = dict()
-    links = list()
+    global PREFIX, CEOS_IMAGE, CONF_DIR, PUBLISH_BASE, OOB_PREFIX, VERSION, DRIVER
 
     # Assigning arguments
     args = parse_args()
@@ -307,50 +414,18 @@ def main():
     CEOS_IMAGE = t_yml.get('CEOS_IMAGE', os.getenv('CEOS_IMAGE', CEOS_IMAGE))
     PUBLISH_BASE = int(t_yml.get('PUBLISH_BASE', os.getenv('PUBLISH_BASE', PUBLISH_BASE)))
     OOB_PREFIX = t_yml.get('OOB_PREFIX',os.getenv('OOB_PREFIX', OOB_PREFIX))
+    VERSION = int(t_yml.get('VERSION',os.getenv('VERSION', VERSION)))
+    DRIVER = t_yml.get('DRIVER',os.getenv('DRIVER', DRIVER))
 
-    # Parsing links in the format ["Device-A:Interface-1", "Device-B:Interface-3"]
-    # Or ["Device-A:Interface-1", "cvp-1", "host-1", "host-2:Eth1", "host-3:Eth2:192.168.10.30/24"]
-    for idx, link_dsc in enumerate(t_yml['links']):
-        if len(link_dsc) == 2:
-            link = Link('p2p', 'net-{}'.format(idx))
-        else:
-            link = Link('mpoint', 'net-{}'.format(idx))
-        links.append(link)
-        for endpoint in link_dsc:
-            ep = endpoint.split(':')
-            if not ep:
-                LOG.info('Link contains empty definition')
-                return 1
-            device_name = ep.pop(0)
-            if 'cvp' in device_name.lower():
-                device = devices.get(device_name, CVP(device_name))
-                # Why are we hard-coding a subnet here? I forgot...
-                # link.set_subnet('192.168.100.0/24')
-            elif 'host' in device_name.lower():
-                # Support for optional IP address parameter
-                if len(ep) > 1:
-                    # This means we have intf name AND IP address
-                    ip = ep.pop()
-                else:
-                    ip = None
-                device = devices.get(device_name, Host(device_name, ip))
-            else:
-                device = devices.get(device_name, CEOS(device_name))
-            # Interface name can be optional
-            if ep:
-                int_name = ep.pop()
-            else:
-                # Note that this would result in an unpredictable connections
-                # when multiple ports are connected to the same link
-                # To avoid that explicitly specify interface name
-                # As in "device:interface"
-                int_name = 'eth{}'.format(idx)
-            # Remember device connections
-            device.connect(int_name, link)
-            devices[device_name] = device
+    # Versioned parsing logic
+    if VERSION == 1:
+        devices = parse_v1(t_yml)
+    if VERSION == 2:
+        devices = parse_v2(t_yml)
 
     # Publishing ports.
     if PUBLISH_BASE:
+        print(devices)
         # Sort all device names alphabetically
         for idx,name in enumerate(sorted(devices.keys())):
             # Publish internal HTTPS port to external base

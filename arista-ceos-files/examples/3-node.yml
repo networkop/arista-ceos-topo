@@ -5,4 +5,4 @@ links:
 
 PREFIX: 3-node-topology
 CONF_DIR: ./config
-CEOS_IMAGE: veos:latest
+CEOS_IMAGE: ceosimage:latest
