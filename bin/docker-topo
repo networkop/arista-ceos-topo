@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import argparse
 import logging
 import yaml
@@ -439,6 +439,9 @@ class Link(object):
         self.link_type = link_type
         self.network = None
         self.opts = driver_opts if driver_opts else {}
+        ipam_pool = docker.types.IPAMPool(subnet=OOB_PREFIX)
+        ipam_config = docker.types.IPAMConfig(pool_configs=[ipam_pool])
+        self.ipam = ipam_config
 
         if link_driver:
             self.driver = link_driver
@@ -467,7 +470,8 @@ class Link(object):
                 self.name,
                 driver=self.driver,
                 labels={PREFIX: self.name},
-                options=self.opts
+                options=self.opts,
+                ipam=self.ipam
             )
 
     def _get(self):
