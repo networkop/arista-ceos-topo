@@ -121,7 +121,7 @@ CONF_DIR: './config' # Config directory to store cEOS startup configuration file
 PUBLISH_BASE: 8000 # Publish cEOS ports starting from this number
 OOB_PREFIX: '192.168.100.0/24' # Only used when link contains CVP or for Macvlan addressing. This prefix is assinged to the containers first ethernet interface.
 OOB_IPPREFIX: 192.168.100.128/25' # Used to steer which addresses within the prefix are being assigned to the containers using Macvlan addressing.
-OOB_GATEWAY: '192.168.100.1 # The default gateway when using Macvlan addressing.
+OOB_GATEWAY: '192.168.100.1' # The default gateway when using Macvlan addressing.
 PREFIX: 'CEOS-LAB' # This will default to a topology filename (without .yml extension)
 driver: None
 ```
