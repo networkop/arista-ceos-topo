@@ -27,6 +27,7 @@ CEOS_IMAGE = 'ceos:latest'
 CONF_DIR = './config'
 PUBLISH_BASE = 8000
 OOB_PREFIX = '192.168.100.0/24'
+OOB_GATEWAY = '192.168.100.1'
 PREFIX = 'CEOS-LAB'
 
 def parse_args():
@@ -440,6 +441,9 @@ class Link(object):
         self.link_type = link_type
         self.network = None
         self.opts = driver_opts if driver_opts else {}
+        ipam_pool = docker.types.IPAMPool(subnet=OOB_PREFIX, iprange=OOB_IPRANGE, gateway=OOB_GATEWAY)
+        ipam_config = docker.types.IPAMConfig(pool_configs=[ipam_pool])
+        self.ipam = ipam_config
 
         if link_driver:
             self.driver = link_driver
@@ -468,7 +472,8 @@ class Link(object):
                 self.name,
                 driver=self.driver,
                 labels={PREFIX: self.name},
-                options=self.opts
+                options=self.opts,
+                ipam=self.ipam
             )
 
     def _get(self):
@@ -496,7 +501,11 @@ class Link(object):
 
 def main():
     # Initializing main variables
+<<<<<<< HEAD
     global PREFIX, CEOS_IMAGE, CONF_DIR, PUBLISH_BASE, OOB_PREFIX, VERSION, PUBLISH_SSH
+=======
+    global PREFIX, CEOS_IMAGE, CONF_DIR, PUBLISH_BASE, OOB_PREFIX, OOB_IPRANGE, OOB_GATEWAY, VERSION
+>>>>>>> 7376d792fc79b850216dbf5b2f039ffa6111fd7a
 
     # Assigning arguments
     args    = parse_args()
@@ -531,6 +540,8 @@ def main():
     CONF_DIR = t_yml.get('CONF_DIR',os.getenv('CONF_DIR', CONF_DIR))
     PUBLISH_BASE = t_yml.get('PUBLISH_BASE', os.getenv('PUBLISH_BASE', PUBLISH_BASE))
     OOB_PREFIX = t_yml.get('OOB_PREFIX',os.getenv('OOB_PREFIX', OOB_PREFIX))
+    OOB_IPRANGE = t_yml.get('OOB_IPRANGE',os.getenv('OOB_IPRANGE', OOB_PREFIX))
+    OOB_GATEWAY = t_yml.get('OOB_GATEWAY',os.getenv('OOB_GATEWAY', OOB_GATEWAY))
     VERSION = int(t_yml.get('VERSION',os.getenv('VERSION', VERSION)))
     PREFIX = t_yml.get('PREFIX',os.getenv('PREFIX', PREFIX))
 
