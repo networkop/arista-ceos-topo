@@ -324,7 +324,7 @@ class CEOS(Device):
         self.command = "/sbin/init"
         self.environment = {
                                "CEOS": 1,
-                               "EOS_PLATFORM": "ceossim",
+                               "EOS_PLATFORM": "ceoslab",
                                "container": "docker",
                                "ETBA": 1,
                                "SKIP_ZEROTOUCH_BARRIER_IN_SYSDBINIT": 1,
